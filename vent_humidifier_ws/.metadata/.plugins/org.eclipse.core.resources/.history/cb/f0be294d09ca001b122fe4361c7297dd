@@ -1,0 +1,395 @@
+/*
+ * temperature_measurement.c
+ *
+ * Created: 26/05/2021 08:56:26
+ *  Author: mtorres
+ */ 
+
+
+/* File inclusion */
+#include "temperature_measurement.h"
+
+/* Variable definition */
+
+static float chamber_temperature_c = 25;
+static float airway_temperature_c = 25;
+static float heater_plate_temperature_c = 25;
+static float input_voltage_v = 5.0;
+float aref_actual_value = ADC_NOMINAL_VOLTAGE_REFERENCE_V	;
+
+
+/* Function definition */
+
+void Temp_Sensor_Input_Voltage_Measure(void){
+
+	uint16_t bin_val;
+
+	/* Select the respective ADC channel and take a sample */
+	sConfig.Channel = V_SENSE_ADC_CH;
+	HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+	HAL_ADC_Start(&hadc1);
+	if(HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK)
+	{
+		/* Transform the ADC value into volts */
+		bin_val = HAL_ADC_GetValue(&hadc1);
+		input_voltage_v = (bin_val * aref_actual_value) / 4096.0;
+		input_voltage_v *= 2.0;
+	}
+
+}
+
+
+void Chamber_Temperature_Measure(void){
+	
+	uint16_t bin_val;
+	float v_rtd_volt;
+	float v_adc_volt;
+	float rtd_res_ohm;
+	float raw_temp_c;
+	
+	float disp_temp;
+
+	/* Select the respective ADC channel and take a sample */
+	sConfig.Channel = CHAMBER_TEMP_SENSOR_ADC_CH;
+	HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+	HAL_ADC_Start(&hadc1);
+	if(HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK)
+	{
+
+		/* Transform the ADC value into volts and calculate the resistance of the RTD */
+		bin_val = HAL_ADC_GetValue(&hadc1);
+		v_adc_volt = ((float)bin_val * aref_actual_value) / 4096.0;
+
+		if(v_adc_volt >= TEMP_PROBE_PRESENCE_DETECT_THRESHOLD_V){
+			__disable_irq();
+			alarm_flags |= (1 << CHAMBER_PROBE_CONN_ALARM_FLAG);
+			__enable_irq();
+		}else{
+			__disable_irq();
+			alarm_flags &= ~(1 << CHAMBER_PROBE_CONN_ALARM_FLAG);
+			__enable_irq();
+		}
+
+		v_rtd_volt = (v_adc_volt + (CHAMBER_TEMP_AMP_VREF_V * CHAMBER_TEMP_AMP_GAIN_02)) / CHAMBER_TEMP_AMP_TOTAL_GAIN;
+		rtd_res_ohm = (CHAMBER_TEMP_SERIES_R_OHM * v_rtd_volt) / (input_voltage_v - v_rtd_volt);
+
+		/* Calculate temperature from resistance */
+		raw_temp_c = RTD_Calculate_T_From_R(rtd_res_ohm);
+		raw_temp_c  = (raw_temp_c  * CHAMBER_TEMP_SPAN) + CHAMBER_TEMP_OFFSET;
+
+		if(raw_temp_c > HEATER_WIRE_TEMP_MAX_VALUE){
+			raw_temp_c = HEATER_WIRE_TEMP_MAX_VALUE;
+		}else if(raw_temp_c < HEATER_WIRE_TEMP_MIN_VALUE){
+			raw_temp_c = HEATER_WIRE_TEMP_MIN_VALUE;
+		}else{
+			//Does nothing
+		}
+
+		/* Filter the signal */
+		Apply_RC_LPF_01(raw_temp_c);
+		chamber_temperature_c = Get_RC_LPF_01_Output();
+
+		/* Check if measured temperature is within the valid range */
+
+		if((chamber_temperature_c < HI_TEMP_INDICATOR_TEMP_LOWER_THRESHOLD_C) && (chamber_temperature_c > LO_TEMP_INDICATOR_TEMP_UPPER_THRESHOLD_C)){
+			__disable_irq();
+			alarm_flags &= ~(1 << CHAMBER_TOO_HIGH_TEMP_ALARM_FLAG);
+			alarm_flags &= ~(1 << CHAMBER_TOO_LOW_TEMP_ALARM_FLAG);
+			__enable_irq();
+		}else if(chamber_temperature_c > HI_TEMP_INDICATOR_TEMP_UPPER_THRESHOLD_C){
+			alarm_flags |= (1 << CHAMBER_TOO_HIGH_TEMP_ALARM_FLAG);
+			alarm_flags &= ~(1 << CHAMBER_TOO_LOW_TEMP_ALARM_FLAG);
+		}else if(chamber_temperature_c < LO_TEMP_INDICATOR_TEMP_LOWER_THRESHOLD_C){
+			alarm_flags &= ~(1 << CHAMBER_TOO_HIGH_TEMP_ALARM_FLAG);
+			alarm_flags |= (1 << CHAMBER_TOO_LOW_TEMP_ALARM_FLAG);
+		}else{
+			// Does nothing
+		}
+
+		/* Chek for high temperature or low temperature alarms */
+
+		disp_temp = (chamber_temperature_c < airway_temperature_c) ? chamber_temperature_c : airway_temperature_c;
+
+		if(system_flags & (1 << NON_HEATER_MODE_FLAG)){
+
+			if(system_flags & (1 << INVASIVE_MODE_FLAG)){
+
+				if(disp_temp < INV_NHEAT_LOW_TEMP_WARNING_DISP_TEMP_LOWER_THRESHOLD_C){
+					__disable_irq();
+					alarm_flags |= (1 << LOW_TEMP_WARNING_FLAG);
+					__enable_irq();
+				}else if(disp_temp  > INV_NHEAT_LOW_TEMP_WARNING_DISP_TEMP_UPPER_THRESHOLD_C){
+					__disable_irq();
+					alarm_flags &= ~(1 << LOW_TEMP_WARNING_FLAG);
+					alarm_flags &= ~(1 << LOW_TEMP_ALARM_FLAG);
+					__enable_irq();
+				}else{
+					// Does nothing
+				}
+
+			}
+
+		}else{
+
+			if(disp_temp > HEAT_HIGH_TEMP_ALARM_DISP_TEMP_UPPER_THRESHOLD_C){
+				__disable_irq();
+				alarm_flags |= (1 << DISPLAY_HIGH_TEMP_ALARM_FLAG);
+				__enable_irq();
+			}else if(disp_temp < HEAT_HIGH_TEMP_ALARM_DISP_TEMP_LOWER_THRESHOLD_C){
+				__disable_irq();
+				alarm_flags &= ~(1 << DISPLAY_HIGH_TEMP_ALARM_FLAG);
+				__enable_irq();
+			}else{
+				// Does nothing
+			}
+
+
+			if(system_flags & (1 << INVASIVE_MODE_FLAG)){
+
+				if(disp_temp < INV_HEAT_LOW_TEMP_WARNING_DISP_TEMP_LOWER_THRESHOLD_C){
+					__disable_irq();
+					alarm_flags |= (1 << LOW_TEMP_WARNING_FLAG);
+					__enable_irq();
+				}else if(disp_temp  > INV_HEAT_LOW_TEMP_WARNING_DISP_TEMP_UPPER_THRESHOLD_C){
+					__disable_irq();
+					alarm_flags &= ~(1 << LOW_TEMP_WARNING_FLAG);
+					alarm_flags &= ~(1 << LOW_TEMP_ALARM_FLAG);
+					__enable_irq();
+				}else{
+					// Does nothing
+				}
+
+			}
+		}
+
+
+	}
+
+}
+
+
+void Airway_Temperature_Measure(void){
+
+	uint16_t bin_val;
+	float v_rtd_volt;
+	float v_adc_volt;
+	float rtd_res_ohm;
+	float raw_temp_c;
+	
+	float disp_temp;
+
+	/* Select the respective ADC channel and take a sample */
+	sConfig.Channel = AIRWAY_TEMP_SENSOR_ADC_CH;
+	HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+	HAL_ADC_Start(&hadc1);
+	if(HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK)
+	{
+
+		/* Transform the ADC value into volts and calculate the resistance of the RTD */
+		bin_val = HAL_ADC_GetValue(&hadc1);
+		v_adc_volt = ((float)bin_val * aref_actual_value) / 4096.0;
+
+		if(v_adc_volt >= TEMP_PROBE_PRESENCE_DETECT_THRESHOLD_V){
+			__disable_irq();
+			alarm_flags |= (1 << AIRWAY_PROBE_CONN_ALARM_FLAG);
+			__enable_irq();
+		}else{
+			__disable_irq();
+			alarm_flags &= ~(1 << AIRWAY_PROBE_CONN_ALARM_FLAG);
+			__enable_irq();
+		}
+
+		v_rtd_volt = (v_adc_volt + (AIRWAY_TEMP_AMP_VREF_V * AIRWAY_TEMP_AMP_GAIN_02)) / AIRWAY_TEMP_AMP_TOTAL_GAIN;
+		rtd_res_ohm = (AIRWAY_TEMP_SERIES_R_OHM * v_rtd_volt) / (input_voltage_v - v_rtd_volt);
+
+		/* Calculate temperature from resistance */
+		raw_temp_c = RTD_Calculate_T_From_R(rtd_res_ohm);
+		raw_temp_c  = (raw_temp_c  * AIRWAY_TEMP_SPAN) + AIRWAY_TEMP_OFFSET;
+
+		if(raw_temp_c > HEATER_WIRE_TEMP_MAX_VALUE){
+			raw_temp_c = HEATER_WIRE_TEMP_MAX_VALUE;
+		}else if(raw_temp_c < HEATER_WIRE_TEMP_MIN_VALUE){
+			raw_temp_c = HEATER_WIRE_TEMP_MIN_VALUE;
+		}else{
+			//Does nothing
+		}
+
+		/* Filter the signal */
+		Apply_RC_LPF_02(raw_temp_c);
+		airway_temperature_c = Get_RC_LPF_02_Output();
+
+		/* Check if measured temperature is within the valid range */
+
+		if((airway_temperature_c < HI_TEMP_INDICATOR_TEMP_LOWER_THRESHOLD_C) && (airway_temperature_c > LO_TEMP_INDICATOR_TEMP_UPPER_THRESHOLD_C)){
+
+			__disable_irq();
+			alarm_flags &= ~(1 << AIRWAY_TOO_HIGH_TEMP_ALARM_FLAG);
+			alarm_flags &= ~(1 << AIRWAY_TOO_LOW_TEMP_ALARM_FLAG);
+			__enable_irq();
+
+		}else if(airway_temperature_c > HI_TEMP_INDICATOR_TEMP_UPPER_THRESHOLD_C){
+
+			alarm_flags |= (1 << AIRWAY_TOO_HIGH_TEMP_ALARM_FLAG);
+			alarm_flags &= ~(1 << AIRWAY_TOO_LOW_TEMP_ALARM_FLAG);
+
+		}else if(airway_temperature_c < LO_TEMP_INDICATOR_TEMP_LOWER_THRESHOLD_C){
+
+			alarm_flags &= ~(1 << AIRWAY_TOO_HIGH_TEMP_ALARM_FLAG);
+			alarm_flags |= (1 << AIRWAY_TOO_LOW_TEMP_ALARM_FLAG);
+
+		}else{
+			// Does nothing
+		}
+
+
+		/* Chek for high temperature or low temperature alarms */
+
+		disp_temp = (chamber_temperature_c < airway_temperature_c) ? chamber_temperature_c : airway_temperature_c;
+
+		if(system_flags & (1 << NON_HEATER_MODE_FLAG)){
+
+			if(airway_temperature_c > NHEAT_HIGH_TEMP_ALARM_AIRWAY_TEMP_UPPER_THRESHOLD_C){
+				__disable_irq();
+				alarm_flags |= (1 << AIRWAY_HIGH_TEMP_ALARM_FLAG);
+				__enable_irq();
+			}else if(airway_temperature_c < NHEAT_HIGH_TEMP_ALARM_AIRWAY_TEMP_LOWER_THRESHOLD_C){
+				__disable_irq();
+				alarm_flags &= ~(1 << AIRWAY_HIGH_TEMP_ALARM_FLAG);
+				__enable_irq();
+			}else{
+				// Does nothing
+			}
+
+			if(system_flags & (1 << INVASIVE_MODE_FLAG)){
+
+				if(disp_temp < INV_NHEAT_LOW_TEMP_WARNING_DISP_TEMP_LOWER_THRESHOLD_C){
+					__disable_irq();
+					alarm_flags |= (1 << LOW_TEMP_WARNING_FLAG);
+					__enable_irq();
+				}else if(disp_temp  > INV_NHEAT_LOW_TEMP_WARNING_DISP_TEMP_UPPER_THRESHOLD_C){
+					__disable_irq();
+					alarm_flags &= ~(1 << LOW_TEMP_WARNING_FLAG);
+					alarm_flags &= ~(1 << LOW_TEMP_ALARM_FLAG);
+					__enable_irq();
+				}else{
+					// Does nothing
+				}
+
+			}
+
+		}else{
+
+			if(airway_temperature_c > HEAT_HIGH_TEMP_ALARM_AIRWAY_TEMP_UPPER_THRESHOLD_C){
+				__disable_irq();
+				alarm_flags |= (1 << AIRWAY_HIGH_TEMP_ALARM_FLAG);
+				__enable_irq();
+			}else if(airway_temperature_c < HEAT_HIGH_TEMP_ALARM_AIRWAY_TEMP_LOWER_THRESHOLD_C){
+				__disable_irq();
+				alarm_flags &= ~(1 << AIRWAY_HIGH_TEMP_ALARM_FLAG);
+				__enable_irq();
+			}else{
+				// Does nothing
+			}
+
+			if(disp_temp > HEAT_HIGH_TEMP_ALARM_DISP_TEMP_UPPER_THRESHOLD_C){
+				__disable_irq();
+				alarm_flags |= (1 << DISPLAY_HIGH_TEMP_ALARM_FLAG);
+				__enable_irq();
+			}else if(disp_temp < HEAT_HIGH_TEMP_ALARM_DISP_TEMP_LOWER_THRESHOLD_C){
+				__disable_irq();
+				alarm_flags &= ~(1 << DISPLAY_HIGH_TEMP_ALARM_FLAG);
+				__enable_irq();
+			}else{
+				// Does nothing
+			}
+
+
+			if(system_flags & (1 << INVASIVE_MODE_FLAG)){
+
+				if(disp_temp < INV_HEAT_LOW_TEMP_WARNING_DISP_TEMP_LOWER_THRESHOLD_C){
+					__disable_irq();
+					alarm_flags |= (1 << DISPLAY_LOW_TEMP_WARNING_FLAG);
+					__enable_irq();
+				}else if(disp_temp  > INV_HEAT_LOW_TEMP_WARNING_DISP_TEMP_UPPER_THRESHOLD_C){
+					__disable_irq();
+					alarm_flags &= ~(1 << DISPLAY_LOW_TEMP_WARNING_FLAG);
+					alarm_flags &= ~(1 << DISPLAY_LOW_TEMP_ALARM_FLAG);
+					__enable_irq();
+				}else{
+					// Does nothing
+				}
+			}
+		}
+	}
+}
+
+
+void Heater_Plate_Temperature_Measure(void){
+	
+	uint16_t bin_val;
+
+	float v_adc_volt;
+	float ntc_res_ohm;
+	float raw_temp_c;
+
+	/* Select the respective ADC channel and take a sample */
+	sConfig.Channel = HEATER_PLATE_TEMP_SENSOR_ADC_CH;
+	HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+	HAL_ADC_Start(&hadc1);
+	if(HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK)
+	{
+		/* Transform the ADC value into volts and calculate the resistance of the NTC */
+		bin_val = HAL_ADC_GetValue(&hadc1);
+		v_adc_volt = ((float)bin_val * aref_actual_value) / 4096.0;
+
+
+		if(v_adc_volt <= NTC_PRESENCE_DETECT_THRESHOLD_V){
+			__disable_irq();
+			alarm_flags |= (1 << NTC_DISCONNECTED_ALARM_FLAG);
+			__enable_irq();
+		}else{
+			__disable_irq();
+			alarm_flags &= ~(1 << NTC_DISCONNECTED_ALARM_FLAG);
+			__enable_irq();
+		}
+
+		if(v_adc_volt < NTC_MIN_VOLTAGE){
+			v_adc_volt = NTC_MIN_VOLTAGE;
+		}
+
+		ntc_res_ohm = NTC_DIVIDER_RES_OHM * ((input_voltage_v / v_adc_volt) - 1) - NTC_PROTECTION_RES_OHM;
+
+		/* Calculate temperature from resistance */
+		raw_temp_c = NTC_Calculate_T_From_R(ntc_res_ohm);
+
+		/* Filter the signal */
+		Apply_RC_LPF_03(raw_temp_c);
+		heater_plate_temperature_c = Get_RC_LPF_03_Output();
+
+	}
+
+}
+
+
+float Chamber_Temperature_Get(void){
+	return chamber_temperature_c;
+}
+
+
+float Airway_Temperature_Get(void){
+	return airway_temperature_c;
+}
+
+
+float Heater_Plate_Temperature_Get(void){
+	return heater_plate_temperature_c;
+}
+
+float Temp_Sensor_Input_Voltage_Get(void){
+	return input_voltage_v;
+}
+
+
+
+
+

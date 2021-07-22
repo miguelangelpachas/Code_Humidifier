@@ -1,0 +1,357 @@
+/*
+ * project_defines.h
+ *
+ *  Created on: May 26, 2021
+ *      Author: mtorres
+ */
+
+#ifndef PROJECT_DEFINES_H_
+#define PROJECT_DEFINES_H_
+
+/*******************************************************
+******************** PIN DEFINITION ********************
+********************************************************/
+
+/* Push buttons pins */
+
+#define PIN_POWER_BUTTON					(GPIOB->IDR)
+#define POWER_BUTTON						8
+
+#define PIN_MODE_BUTTON						(GPIOB->IDR)
+#define MODE_BUTTON							9
+
+#define PIN_MUTE_BUTTON						(GPIOB->IDR)
+#define MUTE_BUTTON							7
+
+
+/* Heater feedback pins */
+
+#define PIN_HEATER_WIRE_01_FEEDBACK			(GPIOB->IDR)
+#define	HEATER_WIRE_01_FEEDBACK				6
+
+#define PIN_HEATER_WIRE_02_FEEDBACK			(GPIOB->IDR)
+#define	HEATER_WIRE_02_FEEDBACK				5
+
+
+/* Heater pins */
+
+#define PORT_HEATER_WIRE_01				(GPIOB->ODR)
+#define HEATER_WIRE_01					14
+
+#define PORT_HEATER_WIRE_02				(GPIOB->ODR)
+#define HEATER_WIRE_02					13
+
+#define PORT_HEATER_PLATE				(GPIOB->ODR)
+#define HEATER_PLATE					12
+
+/* Buzzer pin */
+
+#define PORT_BUZZER						(GPIOB->ODR)
+#define BUZZER							15
+
+/* Zero cross detector pin */
+
+#define PIN_ZCD_SYNC					(GPIOB->IDR)
+#define ZCD_SYNC						11
+
+/* LEDs pins */
+
+#define PORT_AIRWAY_PROBE_LED			(GPIOA->ODR)
+#define AIRWAY_PROBE_LED				10
+
+#define PORT_CHAMBER_PROBE_LED			(GPIOC->ODR)
+#define CHAMBER_PROBE_LED				7
+
+#define PORT_HEATER_ADAPTER_LED			(GPIOC->ODR)
+#define HEATER_ADAPTER_LED				9
+
+#define PORT_SENSOR_ADAPTER_LED			(GPIOA->ODR)
+#define SENSOR_ADAPTER_LED				8
+
+#define PORT_WATER_OUT_LED				(GPIOC->ODR)
+#define WATER_OUT_LED					8
+
+#define PORT_SEE_MANUAL_LED				(GPIOA->ODR)
+#define SEE_MANUAL_LED					9
+
+#define PORT_HUMIDITY_LED				(GPIOA->ODR)
+#define HUMIDITY_LED					11
+
+#define PORT_INVASIVE_MODE_LED			(GPIOC->ODR)
+#define INVASIVE_MODE_LED				6
+
+#define PORT_NONINVASIVE_MODE_LED		(GPIOA->ODR)
+#define NONINVASIVE_MODE_LED			12
+
+
+/* Display pins */
+
+#define PORT_DISPLAY					(GPIOA->ODR)
+#define PORT_ENABLES					(GPIOB->ODR)
+#define EN_0							10
+#define EN_1							1
+#define EN_2							0
+
+#define MASK_ENABLES					((1 << EN_0) | (1 << EN_1) | (1 << EN_2))
+
+
+/*************************************************************
+******************** CONSTANTS AND MACROS ********************
+**************************************************************/
+
+/* Number of displays */
+
+#define	N_DISPLAYS						3
+
+/* Defines for ADC and temperature sensors measurement */
+
+#define ADC_NOMINAL_VOLTAGE_REFERENCE_V			3.3
+#define VREFINT_CAL_ADDR						((uint16_t *)((uint32_t)0x1FFFF7BA))
+#define VREFINT_CAL								(*VREFINT_CAL_ADDR)
+
+#define CHAMBER_TEMP_SENSOR_ADC_CH				ADC_CHANNEL_10
+#define AIRWAY_TEMP_SENSOR_ADC_CH				ADC_CHANNEL_11
+#define HEATER_PLATE_TEMP_SENSOR_ADC_CH			ADC_CHANNEL_13
+#define HEATER_PLATE_FEEDBACK_ADC_CH			ADC_CHANNEL_12
+#define V_SENSE_ADC_CH							ADC_CHANNEL_14
+
+#define V_SENSE_CORRECTION_FACTOR				1.0
+
+#define CHAMBER_TEMP_SERIES_R_OHM				24900.0
+#define CHAMBER_TEMP_AMP_GAIN_01				6.73
+#define CHAMBER_TEMP_AMP_GAIN_02				5.555
+#define CHAMBER_TEMP_AMP_TOTAL_GAIN				(CHAMBER_TEMP_AMP_GAIN_01 * CHAMBER_TEMP_AMP_GAIN_02)
+#define CHAMBER_TEMP_AMP_VREF_V					1.25
+#define CHAMBER_TEMP_SPAN						1.0
+#define CHAMBER_TEMP_OFFSET						0.0
+
+#define AIRWAY_TEMP_SERIES_R_OHM				24900.0
+#define AIRWAY_TEMP_AMP_GAIN_01					6.73
+#define AIRWAY_TEMP_AMP_GAIN_02					5.555
+#define AIRWAY_TEMP_AMP_TOTAL_GAIN				(AIRWAY_TEMP_AMP_GAIN_01 * AIRWAY_TEMP_AMP_GAIN_02)
+#define AIRWAY_TEMP_AMP_VREF_V					1.25
+#define AIRWAY_TEMP_SPAN						1.0
+
+#define AIRWAY_TEMP_OFFSET						0.0
+
+#define NTC_PROTECTION_RES_OHM					10000.0
+#define NTC_DIVIDER_RES_OHM						10000.0
+#define NTC_MIN_VOLTAGE							0.5
+
+#define CURRENT_SENSOR_SENSITIVITY_MV_A			185.0
+
+#define HEATER_WIRE_TEMP_MAX_VALUE				99.0
+#define HEATER_WIRE_TEMP_MIN_VALUE				0.0
+
+
+/* Threshold for the heater plate feedback (in milliamperes rms) */
+#define HEATER_PLATE_FEEDBACK_THRESHOLD_MA								500.0
+
+/* Threshold for temperature probe connected detection */
+#define TEMP_PROBE_PRESENCE_DETECT_THRESHOLD_V							2.9
+
+/* Threshold for NTC conncected detection */
+#define NTC_PRESENCE_DETECT_THRESHOLD_V									0.5
+
+/* Thresholds for temperature alarms and limits */
+
+// ---------------------------- Heater mode --------------------------------
+
+#define HEAT_HIGH_TEMP_ALARM_DISP_TEMP_UPPER_THRESHOLD_C				41.0
+#define HEAT_HIGH_TEMP_ALARM_DISP_TEMP_LOWER_THRESHOLD_C				40.0
+
+#define HEAT_HIGH_TEMP_ALARM_AIRWAY_TEMP_UPPER_THRESHOLD_C				43.0
+#define HEAT_HIGH_TEMP_ALARM_AIRWAY_TEMP_LOWER_THRESHOLD_C				42.0
+
+#define INV_HEAT_LOW_TEMP_WARNING_DISP_TEMP_UPPER_THRESHOLD_C			36.5
+#define INV_HEAT_LOW_TEMP_WARNING_DISP_TEMP_LOWER_THRESHOLD_C			35.5
+
+// ---------------------------- Non-heater mode ----------------------------
+
+#define NHEAT_HIGH_TEMP_ALARM_AIRWAY_TEMP_UPPER_THRESHOLD_C				41.0
+#define NHEAT_HIGH_TEMP_ALARM_AIRWAY_TEMP_LOWER_THRESHOLD_C				40.0
+
+#define INV_NHEAT_LOW_TEMP_WARNING_DISP_TEMP_UPPER_THRESHOLD_C			36.5
+#define INV_NHEAT_LOW_TEMP_WARNING_DISP_TEMP_LOWER_THRESHOLD_C			35.5
+
+ // ----------------- Temp probe placement thresholds -----------------------
+
+#define INV_PROBE_PLACEMENT_PRE_WARM_UP_TEMP_UPPER_THRESHOLD_C			29.5
+#define INV_PROBE_PLACEMENT_PRE_WARM_UP_TEMP_LOWER_THRESHOLD_C			28.5
+#define INV_PROBE_PLACEMENT_POST_WARM_UP_TEMP_UPPER_THRESHOLD_C			30.5
+#define INV_PROBE_PLACEMENT_POST_WARM_UP_TEMP_LOWER_THRESHOLD_C			29.5
+
+#define NINV_PROBE_PLACEMENT_PRE_WARM_UP_TEMP_UPPER_THRESHOLD_C			26.0
+#define NINV_PROBE_PLACEMENT_PRE_WARM_UP_TEMP_LOWER_THRESHOLD_C			25.0
+#define NINV_PROBE_PLACEMENT_POST_WARM_UP_TEMP_UPPER_THRESHOLD_C		27.0
+#define NINV_PROBE_PLACEMENT_POST_WARM_UP_TEMP_LOWER_THRESHOLD_C		26.0
+
+// ----------------------------- Absolute limits ----------------------------
+
+#define HI_TEMP_INDICATOR_TEMP_UPPER_THRESHOLD_C						70.0
+#define HI_TEMP_INDICATOR_TEMP_LOWER_THRESHOLD_C						69.0
+
+#define LO_TEMP_INDICATOR_TEMP_UPPER_THRESHOLD_C						11.0
+#define LO_TEMP_INDICATOR_TEMP_LOWER_THRESHOLD_C						10.0
+
+// --------------------------------------------------------------------------
+
+
+/* Parameters for Stand-by state */
+
+#define STAND_BY_HEATER_WIRE_POWER_PERCENT								15.0
+#define STAND_BY_HEATER_PLATE_TEMP_LIMIT_C								50.0
+#define STAND_BY_HEATER_PLATE_POWER_PERCENT								20.0
+
+
+/* Sample and update periods */
+
+#define TEMP_SAMPLE_PERIOD_MS							100
+#define BUTTON_SCAN_PERIOD_MS							10
+#define DISPLAY_UPDATE_PERIOD_MS						100
+#define HEATER_PLATE_TEMP_MEASURE_PERIOD_MS				1000
+#define RTD_INPUT_VOLTAGE_MEASURE_PERIOD_MS				2000
+#define CHECK_HEATER_PLATE_CIRCUIT_PERIOD_MS			10000
+#define CHECK_HEATER_WIRE_CIRCUIT_PERIOD_MS				5000
+
+/*  Defines for digital filters */
+
+// LPF_01 --> Filter for chamber temperature (RTD 1)
+// LPF_02 --> Filter for airway temperature (RTD 2)
+// LPF_03 --> Filter for heater plate temperature (NTC)
+// LPF_04 --> Filter for PID controller for chamber temperature(derivative component)
+
+#define RC_LPF_01_FC_HZ									0.1
+#define RC_LPF_02_FC_HZ									0.1
+#define RC_LPF_03_FC_HZ									0.25
+#define RC_LPF_04_FC_HZ									0.01
+
+#define RC_LPF_01_RC_CONSTANT_S							(1 / (6.28 * RC_LPF_01_FC_HZ))
+#define RC_LPF_02_RC_CONSTANT_S							(1 / (6.28 * RC_LPF_02_FC_HZ))
+#define RC_LPF_03_RC_CONSTANT_S							(1 / (6.28 * RC_LPF_03_FC_HZ))
+#define RC_LPF_04_RC_CONSTANT_S							(1 / (6.28 * RC_LPF_04_FC_HZ))
+
+#define RC_LPF_01_SAMPLE_PERIOD_MS						TEMP_SAMPLE_PERIOD_MS
+#define RC_LPF_02_SAMPLE_PERIOD_MS						TEMP_SAMPLE_PERIOD_MS
+#define RC_LPF_03_SAMPLE_PERIOD_MS						1000
+#define RC_LPF_04_SAMPLE_PERIOD_MS						833
+
+
+/* Defines for the heater controllers */
+
+#define INVASIVE_HEATER_MODE_CHAMBER_TEMP_SETPOINT_C			37.0
+#define INVASIVE_HEATER_MODE_AIRWAY_TEMP_SETPOINT_C				40.0
+#define NON_INVASIVE_HEATER_MODE_CHAMBER_TEMP_SETPOINT_C		31.0
+#define NON_INVASIVE_HEATER_MODE_AIRWAY_TEMP_SETPOINT_C			34.0
+
+#define INVASIVE_NON_HEATER_MODE_AIRWAY_TEMP_SETPOINT_C			40.0
+#define NON_INVASIVE_NON_HEATER_MODE_AIRWAY_TEMP_SETPOINT_C		34.0
+#define INVASIVE_NON_HEATER_MODE_CHAMBER_TEMP_LIMIT_C			37.0
+#define NON_INVASIVE_NON_HEATER_MODE_CHAMBER_TEMP_LIMIT_C		31.0
+
+#define PWM_STEP_TIME_MS						1
+#define PID_SAMPLE_PERIOD_MS					500
+
+#define HEATER_PLATE_MAX_DUTY_CYCLE				50
+#define HEATER_PLATE_MIN_DUTY_CYCLE				0
+#define HEATER_WIRE_01_MAX_DUTY_CYCLE			100
+#define HEATER_WIRE_01_MIN_DUTY_CYCLE			0
+#define HEATER_WIRE_02_MAX_DUTY_CYCLE			100
+#define HEATER_WIRE_02_MIN_DUTY_CYCLE			0
+
+#define HEATER_PLATE_MAX_TEMP_ALLOWED			100.0
+
+/* Defines for fuzzy controllers */
+
+#define FUZZY_CONTROLLER_SAMPLE_PERIOD_S		0.4167
+#define FUZZY_CONTROL_01_MAX_OUTPUT				40
+#define FUZZY_CONTROL_01_MIN_OUTPUT				20
+
+
+/* Defines for the software PWM signals */
+
+#define PWM_01_STEP_MS							5
+#define PWM_02_STEP_MS							5
+
+/* Heater connection state */
+
+#define HEATER_WIRE_CONNECTED					0
+#define HEATER_WIRE_DISCONNECTED				1
+#define HEATER_PLATE_SCR_OK						0
+#define HEATER_PLATE_SCR_FAIL					1
+
+/* System states */
+
+#define WAIT_FOR_POWER_ON_STATE					0
+#define INITIAL_TESTING_STATE					1
+#define NORMAL_WORKING_STATE					2
+#define WAIT_FOR_POWER_OFF_STATE				3
+
+/* Defines for UART */
+#define UART_TX_BUFFER_SIZE						70
+#define UART_RX_BUFFER_SIZE						30
+
+
+/* System flags */
+
+#define NEW_MEASURE_FLAG						0
+#define BUTTON_READ_FLAG						1
+#define HEATER_PLATE_FEEDBACK_FLAG				2
+#define DISPLAY_UPDATE_FLAG						3
+#define HEATER_PLATE_OUTPUT_UPDATE_FLAG			4
+#define HEATER_WIRE_OUTPUT_UPDATE_FLAG			5
+#define DISPLAY_FLASHING_FLAG					6
+#define BUZZER_ENABLE_FLAG						7
+#define TEMP_SENSOR_QUICK_CHANGE_FLAG			8
+#define TEMP_SENSOR_TEST_FLAG					9
+#define INVASIVE_MODE_FLAG						10
+#define NON_HEATER_MODE_FLAG					11
+#define CHECK_RTD_INPUT_VOLTAGE_FLAG			12
+#define CHECK_HEATER_PLATE_TEMP_FLAG			13
+#define ONE_SECOND_ELAPSED_FLAG					14
+#define ONE_MILLISECOND_ELAPSED_FLAG			15
+#define COMMAND_RECEIVED_DATA_FLAG				16
+#define CHECK_HEATER_PLATE_CIRCUIT_FLAG			17
+#define CHECK_HEATER_WIRE_CIRCUIT_FLAG			18
+#define DISPLAY_SHOW_CHAMBER_TEMP_FLAG			19
+#define DISPLAY_SHOW_AIRWAY_TEMP_FLAG			20
+#define DISPLAY_TEMP_SCAN_FLAG					21
+
+
+/* Alarm flags */
+#define CHAMBER_PROBE_CONN_ALARM_FLAG			0
+#define AIRWAY_PROBE_CONN_ALARM_FLAG			1
+#define TEMPERATURE_PROBE_CONN_ALARM_FLAG		2
+#define CHAMBER_AND_AIRWAY_PROBES_ALARM_FLAG	3
+#define CHAMBER_TEMP_PROBE_ALARM_FLAG			4
+#define AIRWAY_TEMP_PROBE_ALARM_FLAG			5
+#define HEATER_WIRE_ALARM_FLAG					6
+#define WATER_OUT_ALARM_FLAG					7
+#define HIGH_TEMP_ALARM_FLAG					8
+#define LOW_TEMP_WARNING_FLAG					9
+#define LOW_TEMP_ALARM_FLAG						10
+#define HEATER_PLATE_SCR_FAIL_ALARM_FLAG		11
+#define NTC_DISCONNECTED_ALARM_FLAG				12
+#define SEE_MANUAL_ALARM_FLAG					13
+#define CHAMBER_TOO_HIGH_TEMP_ALARM_FLAG		14
+#define CHAMBER_TOO_LOW_TEMP_ALARM_FLAG			15
+#define AIRWAY_TOO_HIGH_TEMP_ALARM_FLAG			16
+#define AIRWAY_TOO_LOW_TEMP_ALARM_FLAG			17
+
+#define DISPLAY_HIGH_TEMP_ALARM_FLAG			18
+#define AIRWAY_HIGH_TEMP_ALARM_FLAG				19
+#define DISPLAY_LOW_TEMP_WARNING_FLAG			20
+#define DISPLAY_LOW_TEMP_ALARM_FLAG				21
+
+
+#define ALARM_MASK	((1 << TEMPERATURE_PROBE_CONN_ALARM_FLAG) | (1 << CHAMBER_AND_AIRWAY_PROBES_ALARM_FLAG) |\
+					(1 << CHAMBER_TEMP_PROBE_ALARM_FLAG) | (1 << AIRWAY_TEMP_PROBE_ALARM_FLAG) | (1 << HEATER_WIRE_ALARM_FLAG) |\
+					(1 << WATER_OUT_ALARM_FLAG) | (1 << HIGH_TEMP_ALARM_FLAG) | (1 << LOW_TEMP_ALARM_FLAG) | (1 << SEE_MANUAL_ALARM_FLAG))
+
+/* Defines for the testing sequence */
+
+#define HUMIDIFIER_MODEL_NUMBER					850 // Modelo 850
+#define HUMIDIFIER_SOFTWARE_VERSION_NUMBER		600 // Versión 6.00
+
+
+#endif /* APP_PROJECT_DEFINES_H_ */

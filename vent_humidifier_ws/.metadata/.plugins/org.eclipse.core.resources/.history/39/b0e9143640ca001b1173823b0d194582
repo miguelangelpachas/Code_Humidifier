@@ -1,0 +1,281 @@
+/*
+ * on_off_controller.c
+ *
+ *  Created on: 7 jun. 2021
+ *      Author: mtorres
+ */
+
+/* File inclusion */
+#include <temperature_controller.h>
+
+/* Function definition */
+
+
+/* Controller for heater plate in NON INVASIVE MODE WITH HEATER WIRES */
+
+double Temperature_Controller_01(double ctrl_setpoint, double ctrl_feedback, uint8_t ctrl_reset){
+
+    static double ctrl_error[3];
+    static double ctrl_output = 0.0;
+
+    if(ctrl_reset){
+
+	    ctrl_error[2] = 0.0;
+	    ctrl_error[1] = 0.0;
+	    ctrl_error[0] = 0.0;
+	    ctrl_output = 0.0;
+
+	 }else{
+
+		ctrl_error[2] = ctrl_error[1];
+		ctrl_error[1] = ctrl_error[0];
+		ctrl_error[0] = ctrl_setpoint - ctrl_feedback;
+
+//		if(ctrl_error[0] < -0.2){
+//		    ctrl_output = 10.0;
+//		}else if(ctrl_error[0] < -0.05){
+//			ctrl_output = 28.0;
+//		}else if(ctrl_error[0] >= 5.0){
+//			ctrl_output = 100.0;
+//		}else if(ctrl_error[0] >= 0.2){
+//			ctrl_output = 42.0;
+//		}else if(ctrl_error[0] >= 0.05){
+//			ctrl_output = 30.0;
+//		}else{
+//		   //Does nothing
+//		}
+
+		if(ctrl_error[0] < -0.2){
+			ctrl_output = 5;
+		}else if(ctrl_error[0] < -0.05){
+			ctrl_output = 14;
+		}else if(ctrl_error[0] >= 5.0){
+			ctrl_output = 50;
+		}else if(ctrl_error[0] >= 0.2){
+			ctrl_output = 21;
+		}else if(ctrl_error[0] >= 0.05){
+			ctrl_output = 15;
+		}else{
+			//Does nothing
+		}
+
+	 }
+
+    return ctrl_output;
+}
+
+
+double Temperature_Controller_02(double ctrl_setpoint, double ctrl_feedback, uint8_t ctrl_reset){
+
+    static double ctrl_error[3];
+    static double ctrl_output = 0.0;
+
+    if(ctrl_reset){
+
+	    ctrl_error[2] = 0.0;
+	    ctrl_error[1] = 0.0;
+	    ctrl_error[0] = 0.0;
+	    ctrl_output = 0.0;
+
+	 }else{
+
+		ctrl_error[2] = ctrl_error[1];
+		ctrl_error[1] = ctrl_error[0];
+		ctrl_error[0] = ctrl_setpoint - ctrl_feedback;
+
+	    if(ctrl_error[0] < -0.4){
+	      ctrl_output = 10;
+	    }else if(ctrl_error[0] < -0.19){
+	      ctrl_output = 30;
+	    }else if(ctrl_error[0] < -0.1){
+	      ctrl_output = 20;
+	    }else if(ctrl_error[0] < -0.15){
+	      ctrl_output = 24;
+	    }else if(ctrl_error[0]  < -0.05){
+	      ctrl_output = 25;
+	    }else if(ctrl_error[0] >= 0.7){
+	      ctrl_output = 50;
+	    }else if(ctrl_error[0] >= 0.05){
+	      ctrl_output = 38;
+	    }else if(ctrl_error[0] >= 0.1){
+	      ctrl_output = 39;
+	    }else if(ctrl_error[0] >= 0.15){
+	      ctrl_output = 40;
+	    }else if(ctrl_error[0] >= 0.2){
+	      ctrl_output = 41;
+	    }else{
+	      //Does nothing
+	    }
+
+	 }
+
+    return ctrl_output;
+}
+
+
+
+double Temperature_Controller_03(double ctrl_setpoint, double ctrl_feedback, uint8_t ctrl_reset){
+
+    static double ctrl_error[3];
+    static double ctrl_output = 0.0;
+
+    if(ctrl_reset){
+
+	    ctrl_error[2] = 0.0;
+	    ctrl_error[1] = 0.0;
+	    ctrl_error[0] = 0.0;
+	    ctrl_output = 0.0;
+
+	 }else{
+
+		ctrl_error[2] = ctrl_error[1];
+		ctrl_error[1] = ctrl_error[0];
+		ctrl_error[0] = ctrl_setpoint - ctrl_feedback;
+
+		if(ctrl_error[0] < -0.2){
+			ctrl_output = 5;
+		}else if(ctrl_error[0] < -0.05){
+			ctrl_output = 14;
+		}else if(ctrl_error[0] >= 5.0){
+			ctrl_output = 50;
+		}else if(ctrl_error[0] >= 0.2){
+			ctrl_output = 21;
+		}else if(ctrl_error[0] >= 0.05){
+			ctrl_output = 15;
+		}else{
+			//Does nothing
+		}
+
+	 }
+
+    return ctrl_output;
+}
+
+
+double Temperature_Controller_04(double ctrl_setpoint, double ctrl_feedback, uint8_t ctrl_reset){
+
+    static double ctrl_error[3];
+    static double ctrl_output = 0.0;
+
+    if(ctrl_reset){
+
+	    ctrl_error[2] = 0.0;
+	    ctrl_error[1] = 0.0;
+	    ctrl_error[0] = 0.0;
+	    ctrl_output = 0.0;
+
+	 }else{
+
+		ctrl_error[2] = ctrl_error[1];
+		ctrl_error[1] = ctrl_error[0];
+		ctrl_error[0] = ctrl_setpoint - ctrl_feedback;
+
+		if(ctrl_error[0] < -0.2){
+			ctrl_output = 5;
+		}else if(ctrl_error[0] < -0.05){
+			ctrl_output = 14;
+		}else if(ctrl_error[0] >= 5.0){
+			ctrl_output = 50;
+		}else if(ctrl_error[0] >= 0.2){
+			ctrl_output = 21;
+		}else if(ctrl_error[0] >= 0.05){
+			ctrl_output = 15;
+		}else{
+			//Does nothing
+		}
+
+	 }
+
+    return ctrl_output;
+}
+
+
+double Temperature_Controller_05(double ctrl_setpoint, double ctrl_feedback, uint8_t ctrl_reset){
+
+    static double ctrl_error[3];
+    static double ctrl_output = 0.0;
+
+    if(ctrl_reset){
+
+	    ctrl_error[2] = 0.0;
+	    ctrl_error[1] = 0.0;
+	    ctrl_error[0] = 0.0;
+	    ctrl_output = 0.0;
+
+	 }else{
+
+		ctrl_error[2] = ctrl_error[1];
+		ctrl_error[1] = ctrl_error[0];
+		ctrl_error[0] = ctrl_setpoint - ctrl_feedback;
+
+		if(ctrl_error[0] < -0.2){
+			ctrl_output = 5;
+		}else if(ctrl_error[0] < -0.05){
+			ctrl_output = 14;
+		}else if(ctrl_error[0] >= 5.0){
+			ctrl_output = 50;
+		}else if(ctrl_error[0] >= 0.2){
+			ctrl_output = 21;
+		}else if(ctrl_error[0] >= 0.05){
+			ctrl_output = 15;
+		}else{
+			//Does nothing
+		}
+
+		ctrl_output = 0;
+
+	 }
+
+    return ctrl_output;
+}
+
+
+double Temperature_Controller_06(double ctrl_setpoint, double ctrl_feedback, uint8_t ctrl_reset){
+
+    static double ctrl_error[3];
+    static double ctrl_output = 0.0;
+
+    if(ctrl_reset){
+
+	    ctrl_error[2] = 0.0;
+	    ctrl_error[1] = 0.0;
+	    ctrl_error[0] = 0.0;
+	    ctrl_output = 0.0;
+
+	 }else{
+
+		ctrl_error[2] = ctrl_error[1];
+		ctrl_error[1] = ctrl_error[0];
+		ctrl_error[0] = ctrl_setpoint - ctrl_feedback;
+
+		if(ctrl_error[0] < -0.2){
+			ctrl_output = 5;
+		}else if(ctrl_error[0] < -0.05){
+			ctrl_output = 14;
+		}else if(ctrl_error[0] >= 5.0){
+			ctrl_output = 50;
+		}else if(ctrl_error[0] >= 0.2){
+			ctrl_output = 21;
+		}else if(ctrl_error[0] >= 0.05){
+			ctrl_output = 15;
+		}else{
+			//Does nothing
+		}
+
+
+		ctrl_output = 0;
+
+	 }
+
+    return ctrl_output;
+}
+
+
+void Temperature_Controllers_Initialize(void){
+	Temperature_Controller_01(0.0, 0.0, 1);
+	Temperature_Controller_02(0.0, 0.0, 1);
+	Temperature_Controller_03(0.0, 0.0, 1);
+	Temperature_Controller_04(0.0, 0.0, 1);
+	Temperature_Controller_05(0.0, 0.0, 1);
+	Temperature_Controller_06(0.0, 0.0, 1);
+}

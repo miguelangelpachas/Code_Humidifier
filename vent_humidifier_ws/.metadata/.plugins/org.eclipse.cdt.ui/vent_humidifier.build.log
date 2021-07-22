@@ -1,0 +1,10 @@
+14:48:00 **** Incremental Build of configuration Debug for project vent_humidifier ****
+make -j8 all 
+arm-none-eabi-size   vent_humidifier.elf 
+   text	   data	    bss	    dec	    hex	filename
+  49956	    160	   2712	  52828	   ce5c	vent_humidifier.elf
+Finished building: default.size.stdout
+ 
+
+14:48:01 Build Finished. 0 errors, 0 warnings. (took 381ms)
+

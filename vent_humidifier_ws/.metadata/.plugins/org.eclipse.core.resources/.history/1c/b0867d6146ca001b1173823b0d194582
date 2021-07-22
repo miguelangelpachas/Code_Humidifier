@@ -1,0 +1,1396 @@
+/*
+ * vent_humidifier.c
+ *
+ * Created: 6/05/2021 11:38:03
+ *  Author: mtorres
+ */ 
+
+/* File inclusion */
+#include "vent_humidifier.h"
+#include <stdio.h>
+#include <string.h>
+
+/* Variable definition */
+
+static uint8_t heater_wire_01_state = HEATER_WIRE_CONNECTED;
+static uint8_t heater_wire_02_state = HEATER_WIRE_CONNECTED;
+static uint8_t heater_plate_scr_state = HEATER_PLATE_SCR_OK;
+
+volatile uint32_t system_flags = 0;
+volatile uint32_t alarm_flags = 0;
+volatile uint8_t system_state = WAIT_FOR_POWER_ON_STATE;
+
+static uint32_t second_counter = 0;
+static uint32_t millisecond_counter = 0;
+
+/* Function definition */
+
+
+void Buzzer_Initialize(void){
+	
+	/* Initialize buzzer in LOW */
+	PORT_BUZZER &= ~(1 << BUZZER);
+	
+}
+
+void Heaters_Initialize(void){
+	
+	/* Initialize HEATER_WIRE_01 in LOW */
+	PORT_HEATER_WIRE_01 &= ~(1 << HEATER_WIRE_01);
+	Set_Heater_Wire_01_Duty_Cycle(0);
+	
+	/* Initialize HEATER_WIRE_02 in LOW */
+	PORT_HEATER_WIRE_02 &= ~(1 << HEATER_WIRE_02);
+	Set_Heater_Wire_02_Duty_Cycle(0);
+	
+	/* Initialize HEATER_PLATE in LOW */
+	PORT_HEATER_PLATE &= ~(1 << HEATER_PLATE);
+	Set_Heater_Plate_Duty_Cycle(0);
+
+	
+}
+
+
+void LEDs_Initialize(void){
+	
+	/* Initialize LEDs in LOW */
+	
+	PORT_AIRWAY_PROBE_LED &= ~(1 << AIRWAY_PROBE_LED);
+	PORT_CHAMBER_PROBE_LED &= ~(1 << CHAMBER_PROBE_LED);
+	PORT_SENSOR_ADAPTER_LED &= ~(1 << SENSOR_ADAPTER_LED);
+	PORT_HEATER_ADAPTER_LED &= ~(1 << HEATER_ADAPTER_LED);
+	PORT_WATER_OUT_LED &= ~(1 << WATER_OUT_LED);
+	PORT_SEE_MANUAL_LED &= ~(1 << SEE_MANUAL_LED);
+	PORT_HUMIDITY_LED &= ~(1 << HUMIDITY_LED);
+	PORT_INVASIVE_MODE_LED &= ~(1 << INVASIVE_MODE_LED);
+	PORT_NONINVASIVE_MODE_LED &= ~(1 << NONINVASIVE_MODE_LED);
+	
+}
+
+
+void System_Initialize(void){
+
+	Buzzer_Initialize();
+	Heaters_Initialize();
+	Display_Inicializar();
+	LEDs_Initialize();
+	Fuzzy_Controllers_Initialize();
+	Fuzzy_Inremental_Controller_01_Set_Parameters(0.5, 0.0, 1.0);
+	Temperature_Controllers_Initialize();
+	Filters_Initialize();
+	RTD_Generate_LUT();
+	NTC_Generate_LUT();
+	HAL_ADC_Stop(&hadc1);
+	HAL_ADCEx_Calibration_Start(&hadc1);
+	Temp_Sensor_Input_Voltage_Measure();
+	HAL_TIM_Base_Start_IT(&htim2);
+
+}
+
+
+void Update_Chamber_Temp_Controller(void){
+
+	float temp_value;
+	float ctrl_output;
+
+
+	/* Non-heater wire mode */
+	if(system_flags & (1 << NON_HEATER_MODE_FLAG)){
+
+		/* Invasive non-heater Mode */
+		if(system_flags & (1 << INVASIVE_MODE_FLAG)){
+			temp_value = Airway_Temperature_Get();
+			ctrl_output = Temperature_Controller_04(INVASIVE_NON_HEATER_MODE_AIRWAY_TEMP_SETPOINT_C, temp_value, 0);
+		/* Non-invasive non-heater mode */
+		}else{
+			temp_value = Airway_Temperature_Get();
+			ctrl_output = Temperature_Controller_03(NON_INVASIVE_NON_HEATER_MODE_AIRWAY_TEMP_SETPOINT_C, temp_value, 0);
+		}
+
+
+	/* Heater wire mode */
+	}else{
+
+		/* Invasive heater Mode */
+		if(system_flags & (1 << INVASIVE_MODE_FLAG)){
+			temp_value= Chamber_Temperature_Get();
+			ctrl_output = Temperature_Controller_02(INVASIVE_HEATER_MODE_CHAMBER_TEMP_SETPOINT_C, temp_value, 0);
+		/* Non-invasive heater mode */
+		}else{
+			temp_value = Chamber_Temperature_Get();
+			ctrl_output = Temperature_Controller_01(NON_INVASIVE_HEATER_MODE_CHAMBER_TEMP_SETPOINT_C, temp_value, 0);
+		}
+
+	}
+
+	__disable_irq();
+	Set_Heater_Plate_Duty_Cycle((uint8_t)ctrl_output);
+	__enable_irq();
+
+}
+
+
+void Update_Wires_Temp_Controller(void){
+
+	float temp_value;
+	float w1_ctrl_output = 0.0;
+	float w2_ctrl_output = 0.0;
+
+	/* Non-heater wire mode */
+	if(system_flags & (1 << NON_HEATER_MODE_FLAG)){
+		w1_ctrl_output = HEATER_WIRE_01_MIN_DUTY_CYCLE;
+		w2_ctrl_output = HEATER_WIRE_02_MIN_DUTY_CYCLE;
+	/* Heater wire mode */
+	}else{
+
+		if(Get_Heater_Wire_01_State() == HEATER_WIRE_CONNECTED){
+			/* Invasive heater Mode */
+			if(system_flags & (1 << INVASIVE_MODE_FLAG)){
+				temp_value= Chamber_Temperature_Get();
+				w1_ctrl_output = Temperature_Controller_05(INVASIVE_HEATER_MODE_AIRWAY_TEMP_SETPOINT_C, temp_value, 0);
+			/* Non-invasive heater mode */
+			}else{
+				temp_value = Chamber_Temperature_Get();
+				w1_ctrl_output = Temperature_Controller_06(NON_INVASIVE_HEATER_MODE_AIRWAY_TEMP_SETPOINT_C, temp_value, 0);
+			}
+
+		}else{
+			w1_ctrl_output = HEATER_WIRE_01_MIN_DUTY_CYCLE;
+		}
+
+		if(Get_Heater_Wire_02_State() == HEATER_WIRE_CONNECTED){
+			w2_ctrl_output = w1_ctrl_output;
+		}else{
+			w2_ctrl_output = HEATER_WIRE_02_MIN_DUTY_CYCLE;
+		}
+
+	}
+
+	__disable_irq();
+	Set_Heater_Wire_01_Duty_Cycle((uint8_t)w1_ctrl_output);
+	Set_Heater_Wire_02_Duty_Cycle((uint8_t)w2_ctrl_output);
+	__enable_irq();
+
+}
+
+
+
+void System_Power_On_Sequence(void){
+
+	if(system_flags & (1 << CHECK_RTD_INPUT_VOLTAGE_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << CHECK_RTD_INPUT_VOLTAGE_FLAG);
+		__enable_irq();
+		Temp_Sensor_Input_Voltage_Measure();
+	}
+
+
+	if(system_flags & (1 << CHECK_HEATER_PLATE_TEMP_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << CHECK_HEATER_PLATE_TEMP_FLAG);
+		__enable_irq();
+		Heater_Plate_Temperature_Measure();
+	}
+
+
+	if(system_flags & (1 << HEATER_PLATE_FEEDBACK_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << HEATER_PLATE_FEEDBACK_FLAG);
+		__enable_irq();
+		Heater_Plate_Feedback_Measure();
+	}
+
+
+	if(system_flags & (1 << NEW_MEASURE_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << NEW_MEASURE_FLAG);
+		__enable_irq();
+		Chamber_Temperature_Measure();
+		Airway_Temperature_Measure();
+	}
+
+
+	if(system_flags & (1 << BUTTON_READ_FLAG)){
+
+		__disable_irq();
+		system_flags &= ~(1 << BUTTON_READ_FLAG);
+		__enable_irq();
+
+		if(G1_Get_Button_Press(1 << POWER_BUTTON)){
+
+			Clean_Buttons();
+
+			__disable_irq();
+			system_state = INITIAL_TESTING_STATE;
+			__enable_irq();
+
+		}
+
+	}
+
+}
+
+
+void System_Test_Sequence(void){
+
+	static uint8_t test_state = 0;
+
+
+	switch (test_state){
+
+	case 0:
+
+		if(Visual_Audio_Test_Sequence()){
+			test_state++;
+		}
+		break;
+
+	case 1:
+
+		if(Internal_Self_Test_Sequence()){
+			test_state++;
+
+		}
+		break;
+
+	case 2:
+
+		Alarm_Manager();
+//
+//		if(alarm_flags & (1 << HEATER_WIRE_ALARM_FLAG)){
+//			__disable_irq();
+//			alarm_flags &= (1 << HEATER_WIRE_ALARM_FLAG);
+//			system_flags |= (1 << NON_HEATER_MODE_FLAG);
+//			__enable_irq();
+//		}
+//
+//
+		if(alarm_flags & (1 << SEE_MANUAL_ALARM_FLAG)){
+			__disable_irq();
+			system_state = ERROR_STATE;
+			__enable_irq();
+		}else{
+			__disable_irq();
+			system_state = NORMAL_WORKING_STATE;
+			__enable_irq();
+		}
+
+		Clean_Buttons();
+		test_state = 0;
+
+		break;
+
+	default:
+
+		break;
+
+	}
+
+}
+
+
+void System_Working_Sequence(void){
+
+	static float chamber_temp = 25.0;
+	static float airway_temp = 25;
+	static float heater_plate_temp = 25;
+	static float new_sp = 0;
+
+	static float heater_plate_current = 0.0;
+
+	static float aux = 0.0;
+
+	if(system_flags & (1 << BUTTON_READ_FLAG)){
+
+		__disable_irq();
+		system_flags &= ~(1 << BUTTON_READ_FLAG);
+		__enable_irq();
+
+
+		if(!(system_flags & (1 << DISPLAY_TEMP_SCAN_FLAG))){
+
+			if(G1_Get_Button_Long(1 << POWER_BUTTON)){
+				system_state = WAIT_FOR_POWER_OFF_STATE;
+			}
+
+			if(G1_Get_Button_Short(1 << MODE_BUTTON)){
+				__disable_irq();
+				system_flags ^= (1 << INVASIVE_MODE_FLAG);
+				__enable_irq();
+			}
+
+			if(G1_Get_Button_Long(1 << MUTE_BUTTON)){
+				__disable_irq();
+				system_flags |= (1 << DISPLAY_TEMP_SCAN_FLAG);
+				__enable_irq();
+			}
+
+
+			if(G1_Get_Button_Short(1 << MUTE_BUTTON)){
+				Alarm_Buzzer_Mute();
+			}
+
+		}
+
+	}
+
+	if(system_flags & (1 << CHECK_RTD_INPUT_VOLTAGE_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << CHECK_RTD_INPUT_VOLTAGE_FLAG);
+		__enable_irq();
+		Temp_Sensor_Input_Voltage_Measure();
+	}
+
+	if(system_flags & (1 << CHECK_HEATER_PLATE_TEMP_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << CHECK_HEATER_PLATE_TEMP_FLAG);
+		__enable_irq();
+		Heater_Plate_Temperature_Measure();
+	}
+
+	if(system_flags & (1 << HEATER_PLATE_FEEDBACK_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << HEATER_PLATE_FEEDBACK_FLAG);
+		__enable_irq();
+		Heater_Plate_Feedback_Measure();
+	}
+
+	if(system_flags & (1 << NEW_MEASURE_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << NEW_MEASURE_FLAG);
+		__enable_irq();
+		Chamber_Temperature_Measure();
+		Airway_Temperature_Measure();
+		chamber_temp = Chamber_Temperature_Get();
+		airway_temp = Airway_Temperature_Get();
+	}
+
+
+	if(system_flags & (1 << ALARM_UPDATE_FLAG)){
+
+		__disable_irq();
+		system_flags &= ~(1 << ALARM_UPDATE_FLAG);
+		__enable_irq();
+
+		Alarm_Manager();
+
+	}
+
+
+	if(system_flags & (1 << DISPLAY_UPDATE_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << DISPLAY_UPDATE_FLAG);
+		__enable_irq();
+
+		if(system_flags & (1 << DISPLAY_TEMP_SCAN_FLAG)){
+			Display_Temperature_Scan();
+		}
+
+		Display_Update();
+	}
+
+
+	if(system_flags & (1 << ONE_MILLISECOND_ELAPSED_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << ONE_MILLISECOND_ELAPSED_FLAG);
+		__enable_irq();
+		millisecond_counter++;
+	}
+
+
+
+	if(system_flags & (1 << CHECK_HEATER_PLATE_CIRCUIT_FLAG)){
+
+		if(Test_Heater_Plate_SCR()){
+			__disable_irq();
+			system_flags &= ~(1 << CHECK_HEATER_PLATE_CIRCUIT_FLAG);
+			__enable_irq();
+		}
+
+	}else if(system_flags & (1 << CHECK_HEATER_WIRE_CIRCUIT_FLAG)){
+
+		if(system_flags & (1 << NON_HEATER_MODE_FLAG)){
+			__disable_irq();
+			system_flags &= ~(1 << CHECK_HEATER_WIRE_CIRCUIT_FLAG);
+			__enable_irq();
+
+		}else{
+			if(Test_Heater_Wire_Presence()){
+				__disable_irq();
+				system_flags &= ~(1 << CHECK_HEATER_WIRE_CIRCUIT_FLAG);
+				__enable_irq();
+			}
+		}
+
+	}else if(system_flags & (1 << HEATER_PLATE_OUTPUT_UPDATE_FLAG)){
+
+		__disable_irq();
+		system_flags &= ~(1 << HEATER_PLATE_OUTPUT_UPDATE_FLAG);
+		__enable_irq();
+
+		Update_Chamber_Temp_Controller();
+
+	}else if(system_flags & (1 << HEATER_WIRE_OUTPUT_UPDATE_FLAG)){
+
+		// ---------- Just for testing purposes ----------------------
+		if(system_flags & (1 << COMMAND_RECEIVED_DATA_FLAG)){
+			__disable_irq();
+			system_flags &= ~(1 << COMMAND_RECEIVED_DATA_FLAG);
+			new_sp = my_setpoint;
+			aux = wire_setpoint;
+			__enable_irq();
+		}
+		// ----------------------------------------------------------
+
+		//Update_Wires_Temp_Controller();
+		__disable_irq();
+		Set_Heater_Wire_01_Duty_Cycle(new_sp);
+		Set_Heater_Wire_02_Duty_Cycle(0);
+		__enable_irq();
+	}
+
+
+	if(system_flags & (1 << ONE_SECOND_ELAPSED_FLAG)){
+
+		__disable_irq();
+		system_flags &= ~(1 << ONE_SECOND_ELAPSED_FLAG);
+		__enable_irq();
+
+		//heater_plate_current = Heater_Plate_Max_Current_Get();
+		//sprintf((char *)uart_tx_buffer,"%d.%02d,%d.%02d\r\n", (int)my_setpoint, ((int)(new_sp * 100)) % 100,(int)chamber_temp, ((int)(chamber_temp * 100)) % 100);
+		//sprintf((char *)uart_tx_buffer,"%d.%02d\r\n", (int)chamber_temp, ((int)(chamber_temp * 100)) % 100);
+		//sprintf((char *)uart_tx_buffer,"%d.%02d,%d.0\r\n", (int)chamber_temp, ((int)(chamber_temp * 100)) % 100, Get_Heater_Plate_Duty_Cycle());
+		sprintf((char *)uart_tx_buffer,"%d.%02d,%d.0\r\n", (int)chamber_temp, ((int)(chamber_temp * 100)) % 100, Get_Heater_Wire_01_Duty_Cycle());
+		HAL_UART_Transmit(&huart3, (uint8_t *)uart_tx_buffer, strlen(uart_tx_buffer), HAL_MAX_DELAY);
+
+//		heater_plate_temp = Heater_Plate_Temperature_Get();
+//		sprintf((char *)uart_tx_buffer,"T_Cam: %d.%02d\r\nT_Corr: %d.%02d\r\nT_Plato: %d.%02d\r\nI(mA): %d\r\n\n",
+//				(int)chamber_temp, ((int)(chamber_temp * 100)) % 100,
+//				(int)airway_temp, ((int)(airway_temp * 100)) % 100,
+//				(int)heater_plate_temp, ((int)(heater_plate_temp * 100)) % 100,
+//				(int)heater_plate_current
+//				);
+		//HAL_UART_Transmit(&huart3, (uint8_t *)uart_tx_buffer, strlen((char *)uart_tx_buffer), HAL_MAX_DELAY);
+		//Heater_Plate_Max_Current_Reset();
+	}
+
+
+//	if(system_flags & (1 << SEE_MANUAL_ALARM_FLAG)){
+//		__disable_irq();
+//		system_state = ERROR_STATE;
+//		__enable_irq();
+//	}else if(alarm_flags & STANDBY_ALARM_MASK){
+//		__disable_irq();
+//		system_state = STANDBY_STATE;
+//		__enable_irq();
+//	}else{
+//		__disable_irq();
+//		system_state = NORMAL_WORKING_STATE;
+//		__enable_irq();
+//	}
+
+}
+
+
+void System_Power_Off_Sequence(void){
+
+	static uint8_t sequence_state = 0;
+
+	switch(sequence_state){
+
+	case 0:
+
+		LEDs_Initialize();
+		Display_Turn_Off();
+		Heater_Plate_Turn_Off();
+		Heater_Wire_01_Turn_Off();
+		Heater_Wire_02_Turn_Off();
+
+		sequence_state++;
+
+	case 1:
+
+		if(system_flags & (1 << BUTTON_READ_FLAG)){
+			__disable_irq();
+			system_flags &= ~(1 << BUTTON_READ_FLAG);
+			__enable_irq();
+
+			if(G1_Get_Button_Release(1 << POWER_BUTTON)){
+				sequence_state++;
+			}
+		}
+
+		break;
+
+	case 2:
+
+		Clean_Buttons();
+		Buzzer_Off();
+		system_state = WAIT_FOR_POWER_ON_STATE;
+		sequence_state = 0;
+
+		__disable_irq();
+		alarm_flags = 0;
+		system_flags = 0;
+		__disable_irq();
+
+		break;
+
+	default:
+
+		break;
+
+
+	}
+
+}
+
+
+void System_Sequence(void){
+
+	switch(system_state){
+
+		case WAIT_FOR_POWER_ON_STATE:
+			System_Power_On_Sequence();
+			break;
+
+		case INITIAL_TESTING_STATE:
+			System_Test_Sequence();
+			break;
+
+		case NORMAL_WORKING_STATE:
+			System_Working_Sequence();
+			break;
+
+		case WAIT_FOR_POWER_OFF_STATE:
+			System_Power_Off_Sequence();
+			break;
+
+		case ERROR_STATE:
+			System_Error_Sequence();
+			break;
+
+		case STANDBY_STATE:
+			System_Standby_Sequence();
+			break;
+
+		default:
+			break;
+	}
+
+
+
+}
+
+
+
+
+uint8_t Internal_Self_Test_Sequence(void){
+
+	static uint8_t test_state = 0;
+	uint8_t result = 0;
+
+
+	if(system_flags & (1 << CHECK_RTD_INPUT_VOLTAGE_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << CHECK_RTD_INPUT_VOLTAGE_FLAG);
+		__enable_irq();
+		Temp_Sensor_Input_Voltage_Measure();
+	}
+
+
+	if(system_flags & (1 << CHECK_HEATER_PLATE_TEMP_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << CHECK_HEATER_PLATE_TEMP_FLAG);
+		__enable_irq();
+		Heater_Plate_Temperature_Measure();
+	}
+
+
+	if(system_flags & (1 << HEATER_PLATE_FEEDBACK_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << HEATER_PLATE_FEEDBACK_FLAG);
+		__enable_irq();
+		Heater_Plate_Feedback_Measure();
+	}
+
+
+	if(system_flags & (1 << NEW_MEASURE_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << NEW_MEASURE_FLAG);
+		__enable_irq();
+		Chamber_Temperature_Measure();
+		Airway_Temperature_Measure();
+	}
+
+
+	if(system_flags & (1 << ONE_MILLISECOND_ELAPSED_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << ONE_MILLISECOND_ELAPSED_FLAG);
+		__enable_irq();
+		millisecond_counter++;
+	}
+
+	switch(test_state){
+
+	case 0:
+
+		if(Test_Heater_Wire_Presence()){
+			test_state++;
+		}
+
+		break;
+
+	case 1:
+
+		if(Test_Heater_Plate_SCR()){
+			test_state++;
+		}
+
+		break;
+
+	case 2:
+
+		test_state = 0;
+		result = 1;
+
+		break;
+
+	default:
+
+		break;
+
+	}
+
+	return result;
+
+}
+
+
+uint8_t Test_Heater_Wire_Presence(void){
+
+	static uint8_t w1_prev_duty_cycle = 0;
+	static uint8_t w2_prev_duty_cycle = 0;
+
+	static uint8_t test_state = 0;
+	static uint8_t wire_test_counter = 0;
+	uint8_t result = 0;
+
+
+	switch(test_state){
+
+	case 0:
+
+			w1_prev_duty_cycle = Get_Heater_Wire_01_Duty_Cycle();
+			w2_prev_duty_cycle = Get_Heater_Wire_02_Duty_Cycle();
+			__disable_irq();
+			Set_Heater_Wire_01_Duty_Cycle(HEATER_WIRE_01_MAX_DUTY_CYCLE);
+			Set_Heater_Wire_02_Duty_Cycle(HEATER_WIRE_02_MIN_DUTY_CYCLE);
+			__enable_irq();
+			millisecond_counter = 0;
+			wire_test_counter = 0;
+			test_state++;
+
+			break;
+
+	case 1:
+
+			if(millisecond_counter >= 50){
+
+				if(!(g1_button_state & (1 << HEATER_WIRE_01_FEEDBACK))){
+					wire_test_counter++;
+				}
+
+				test_state++;
+			}
+
+			break;
+
+	case 2:
+			__disable_irq();
+			Set_Heater_Wire_01_Duty_Cycle(HEATER_WIRE_01_MIN_DUTY_CYCLE);
+			Set_Heater_Wire_02_Duty_Cycle(HEATER_WIRE_02_MIN_DUTY_CYCLE);
+			__enable_irq();
+			millisecond_counter = 0;
+			test_state++;
+
+			break;
+
+	case 3:
+
+			if(millisecond_counter >= 50){
+
+				if((g1_button_state & (1 << HEATER_WIRE_01_FEEDBACK))){
+					wire_test_counter++;
+				}
+
+				if(wire_test_counter < 2){
+					heater_wire_01_state = HEATER_WIRE_DISCONNECTED;
+					__disable_irq();
+					alarm_flags |= (1 << HEATER_WIRE_ALARM_FLAG);
+					__enable_irq();
+				}else{
+					heater_wire_01_state = HEATER_WIRE_CONNECTED;
+					__disable_irq();
+					alarm_flags &= ~(1 << HEATER_WIRE_ALARM_FLAG);
+					__enable_irq();
+				}
+
+				test_state++;
+			}
+
+			break;
+
+	case 4:
+
+			__disable_irq();
+			Set_Heater_Wire_01_Duty_Cycle(HEATER_WIRE_01_MIN_DUTY_CYCLE);
+			Set_Heater_Wire_02_Duty_Cycle(HEATER_WIRE_02_MAX_DUTY_CYCLE);
+			__enable_irq();
+			millisecond_counter = 0;
+			wire_test_counter = 0;
+			test_state++;
+
+			break;
+
+	case 5:
+
+			if(millisecond_counter >= 50){
+
+				if(!(g1_button_state & (1 << HEATER_WIRE_02_FEEDBACK))){
+					wire_test_counter++;
+				}
+
+				test_state++;
+			}
+
+			break;
+
+	case 6:
+
+			__disable_irq();
+			Set_Heater_Wire_01_Duty_Cycle(HEATER_WIRE_01_MIN_DUTY_CYCLE);
+			Set_Heater_Wire_02_Duty_Cycle(HEATER_WIRE_02_MIN_DUTY_CYCLE);
+			__enable_irq();
+			millisecond_counter = 0;
+			test_state++;
+
+			break;
+
+	case 7:
+
+			if(millisecond_counter >= 50){
+
+				if((g1_button_state & (1 << HEATER_WIRE_02_FEEDBACK))){
+					wire_test_counter++;
+				}
+
+				if(wire_test_counter < 2){
+					heater_wire_02_state = HEATER_WIRE_DISCONNECTED;
+				}else{
+					heater_wire_02_state = HEATER_WIRE_CONNECTED;
+				}
+
+				__disable_irq();
+				Set_Heater_Wire_01_Duty_Cycle(w1_prev_duty_cycle);
+				Set_Heater_Wire_02_Duty_Cycle(w2_prev_duty_cycle);
+				__enable_irq();
+
+				test_state = 0;
+				millisecond_counter = 0;
+				result = 1;
+			}
+
+			break;
+
+
+	default:
+
+			break;
+
+	}
+
+	return result;
+
+}
+
+
+uint8_t Get_Heater_Wire_01_State(void){
+	return heater_wire_01_state;
+}
+
+
+uint8_t Get_Heater_Wire_02_State(void){
+	return heater_wire_02_state;
+}
+
+
+uint8_t Test_Heater_Plate_SCR(void){
+
+	static uint8_t prev_heater_duty_cycle = 0;
+
+	static uint8_t test_state = 0;
+	static uint8_t plate_test_counter = 0;
+	float current_ma = 0.0;
+	uint8_t result = 0;
+
+
+	switch(test_state){
+
+	case 0:
+
+			prev_heater_duty_cycle = Get_Heater_Plate_Duty_Cycle();
+			__disable_irq();
+			Set_Heater_Plate_Duty_Cycle(HEATER_PLATE_MAX_DUTY_CYCLE);
+			__enable_irq();
+			millisecond_counter = 0;
+			plate_test_counter = 0;
+			test_state++;
+
+			break;
+
+
+	case 1:
+			if(millisecond_counter >= 20){
+				millisecond_counter = 0;
+				Heater_Plate_Max_Current_Reset();
+				test_state++;
+			}
+
+			break;
+
+	case 2:
+
+			if(millisecond_counter >= 100){
+				current_ma =  Heater_Plate_Max_Current_Get();
+				if(current_ma >= HEATER_PLATE_FEEDBACK_THRESHOLD_MA){
+					plate_test_counter++;
+				}
+
+				test_state++;
+			}
+
+			break;
+
+	case 3:
+			__disable_irq();
+			Set_Heater_Plate_Duty_Cycle(HEATER_PLATE_MIN_DUTY_CYCLE);
+			__enable_irq();
+			millisecond_counter = 0;
+			test_state++;
+
+			break;
+
+	case 4:
+
+			if(millisecond_counter >= 20){
+				millisecond_counter = 0;
+				Heater_Plate_Max_Current_Reset();
+				test_state++;
+			}
+
+			break;
+
+	case 5:
+
+			if(millisecond_counter >= 100){
+
+				current_ma =  Heater_Plate_Max_Current_Get();
+				if(current_ma < HEATER_PLATE_FEEDBACK_THRESHOLD_MA){
+					plate_test_counter++;
+				}
+
+				if(plate_test_counter < 2){
+					heater_plate_scr_state = HEATER_PLATE_SCR_FAIL;
+					//__disable_irq();
+					//alarm_flags |= (1 << HEATER_PLATE_SCR_FAIL_ALARM_FLAG);
+					//__enable_irq();
+				}else{
+					heater_plate_scr_state = HEATER_PLATE_SCR_OK;
+					__disable_irq();
+					alarm_flags &= ~(1 << HEATER_PLATE_SCR_FAIL_ALARM_FLAG);
+					__enable_irq();
+				}
+
+				Heater_Plate_Max_Current_Reset();
+				test_state = 0;
+				millisecond_counter = 0;
+				result = 1;
+				__disable_irq();
+				Set_Heater_Plate_Duty_Cycle(prev_heater_duty_cycle);
+				__enable_irq();
+
+			}
+
+	default:
+		break;
+
+	}
+
+	return result;
+}
+
+
+uint8_t Test_Temperature_Probe(void){
+	return 0;
+}
+
+
+
+uint8_t Visual_Audio_Test_Sequence(void){
+
+	static uint8_t test_state = 0;
+	uint8_t result = 0;
+
+	if(system_flags & (1 << CHECK_RTD_INPUT_VOLTAGE_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << CHECK_RTD_INPUT_VOLTAGE_FLAG);
+		__enable_irq();
+		Temp_Sensor_Input_Voltage_Measure();
+	}
+
+	if(system_flags & (1 << CHECK_HEATER_PLATE_TEMP_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << CHECK_HEATER_PLATE_TEMP_FLAG);
+		__enable_irq();
+		Heater_Plate_Temperature_Measure();
+	}
+
+	if(system_flags & (1 << HEATER_PLATE_FEEDBACK_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << HEATER_PLATE_FEEDBACK_FLAG);
+		__enable_irq();
+		Heater_Plate_Feedback_Measure();
+	}
+
+	if(system_flags & (1 << NEW_MEASURE_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << NEW_MEASURE_FLAG);
+		__enable_irq();
+		Chamber_Temperature_Measure();
+		Airway_Temperature_Measure();
+		Heater_Plate_Feedback_Measure();
+	}
+
+	if(system_flags & (1 << ONE_MILLISECOND_ELAPSED_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << ONE_MILLISECOND_ELAPSED_FLAG);
+		__enable_irq();
+		millisecond_counter++;
+	}
+
+
+	switch(test_state){
+
+	case 0:
+
+		millisecond_counter = 0;
+		test_state++;
+
+		break;
+
+	case 1:
+
+		if(millisecond_counter >= 1){
+			test_state++;
+		}
+
+		break;
+
+	case 2:
+
+		if(millisecond_counter >= 2){
+			test_state++;
+		}
+
+		break;
+
+	case 3:
+
+		/* FIRST: Turn on display (all segments) and LEDs */
+
+		display_buffer[0] = 0xFF;
+		display_buffer[1] = 0xFF;
+		display_buffer[2] = 0xFF;
+		Display_Turn_On();
+
+		PORT_AIRWAY_PROBE_LED |= (1 << AIRWAY_PROBE_LED);
+		PORT_CHAMBER_PROBE_LED |= (1 << CHAMBER_PROBE_LED);
+		PORT_SENSOR_ADAPTER_LED |= (1 << SENSOR_ADAPTER_LED);
+		PORT_HEATER_ADAPTER_LED |= (1 << HEATER_ADAPTER_LED);
+		PORT_WATER_OUT_LED |= (1 << WATER_OUT_LED);
+		PORT_SEE_MANUAL_LED |= (1 << SEE_MANUAL_LED);
+		PORT_HUMIDITY_LED |= (1 << HUMIDITY_LED);
+		PORT_INVASIVE_MODE_LED |= (1 << INVASIVE_MODE_LED);
+		PORT_NONINVASIVE_MODE_LED |= (1 << NONINVASIVE_MODE_LED);
+
+		if(millisecond_counter >= 500){
+			test_state++;
+		}
+
+		break;
+
+
+	case 4:
+
+		/* SECOND: Blank display and restore LEDs to their default value */
+
+		Display_Turn_Off();
+
+		PORT_AIRWAY_PROBE_LED &= ~(1 << AIRWAY_PROBE_LED);
+		PORT_CHAMBER_PROBE_LED &= ~(1 << CHAMBER_PROBE_LED);
+		PORT_SENSOR_ADAPTER_LED &= ~(1 << SENSOR_ADAPTER_LED);
+		PORT_HEATER_ADAPTER_LED &= ~(1 << HEATER_ADAPTER_LED);
+		PORT_WATER_OUT_LED &= ~(1 << WATER_OUT_LED);
+		PORT_SEE_MANUAL_LED &= ~(1 << SEE_MANUAL_LED);
+		PORT_HUMIDITY_LED &= ~(1 << HUMIDITY_LED);
+
+		if(system_flags & (1 << INVASIVE_MODE_FLAG)){
+			PORT_NONINVASIVE_MODE_LED &= ~(1 << NONINVASIVE_MODE_LED);
+		}else{
+			PORT_INVASIVE_MODE_LED &= ~(1 << INVASIVE_MODE_LED);
+		}
+
+		if(millisecond_counter >= 1000){
+			test_state++;
+		}
+
+		break;
+
+
+	case 5:
+
+		/* THIRD: Display shows humidifier model */
+		Display_Decodificar_Entero_Decimal(HUMIDIFIER_MODEL_NUMBER);
+		Display_Turn_On();
+
+		if(millisecond_counter >= 1500){
+			test_state++;
+		}
+
+		break;
+
+
+	case 6:
+
+		/* FOURTH: Display is blanked */
+		Display_Turn_Off();
+
+		if(millisecond_counter >= 2000){
+			test_state++;
+		}
+
+		break;
+
+	case 7:
+
+		/* FIFTH: Display shows software version number */
+		Display_Decodificar_Entero_Decimal(HUMIDIFIER_SOFTWARE_VERSION_NUMBER);
+		display_buffer[2] |= (1 << 7);
+		Display_Turn_On();
+
+		if(millisecond_counter >= 2500){
+			test_state++;
+		}
+
+		break;
+
+	case 8:
+
+		/* SIXTH: Display is blanked and audio tone sounds */
+		Display_Turn_Off();
+		PORT_BUZZER |= (1 << BUZZER);
+
+		if(millisecond_counter >= 3000){
+			test_state++;
+		}
+
+		break;
+
+	case 9:
+
+		/* SEVENTH: Display works normal and audio tone stops */
+		display_buffer[0] = 0;
+		display_buffer[1] = 0;
+		display_buffer[2] = 0;
+		Display_Turn_On();
+		PORT_BUZZER &= ~(1 << BUZZER);
+		test_state = 0;
+		result = 1;
+
+		break;
+
+
+	default:
+
+		break;
+
+	}
+
+	return result;
+
+}
+
+
+void System_Error_Sequence(void){
+
+
+	if(system_flags & (1 << BUTTON_READ_FLAG)){
+
+		__disable_irq();
+		system_flags &= ~(1 << BUTTON_READ_FLAG);
+		__enable_irq();
+
+		if(G1_Get_Button_Long(1 << POWER_BUTTON)){
+			system_state = WAIT_FOR_POWER_OFF_STATE;
+		}
+
+		if(G1_Get_Button_Short(1 << MUTE_BUTTON)){
+			Alarm_Buzzer_Mute();
+		}
+
+	}
+
+
+
+	if(system_flags & (1 << ALARM_UPDATE_FLAG)){
+
+		__disable_irq();
+		system_flags &= ~(1 << ALARM_UPDATE_FLAG);
+		__enable_irq();
+
+		Alarm_Manager();
+
+	}
+
+
+	if(system_flags & (1 << DISPLAY_UPDATE_FLAG)){
+
+		__disable_irq();
+		system_flags &= ~(1 << DISPLAY_UPDATE_FLAG);
+		__enable_irq();
+
+		if(system_flags & (1 << DISPLAY_TEMP_SCAN_FLAG)){
+			Display_Temperature_Scan();
+		}
+
+		Display_Interface_Show_Error_Message();
+	}
+
+
+	if(system_flags & (1 << HEATER_PLATE_OUTPUT_UPDATE_FLAG)){
+		__disable_irq();
+		Set_Heater_Plate_Duty_Cycle(HEATER_PLATE_MIN_DUTY_CYCLE);
+		__disable_irq();
+	}
+
+
+	if(system_flags & (1 << HEATER_WIRE_OUTPUT_UPDATE_FLAG)){
+		__disable_irq();
+		Set_Heater_Wire_01_Duty_Cycle(HEATER_WIRE_01_MIN_DUTY_CYCLE);
+		Set_Heater_Wire_02_Duty_Cycle(HEATER_WIRE_02_MIN_DUTY_CYCLE);
+		__disable_irq();
+	}
+
+
+}
+
+
+void System_Standby_Sequence(void){
+
+
+	static float chamber_temp = 25.0;
+	static float airway_temp = 25;
+	static float heater_plate_temp = 25;
+	static float new_sp = 0;
+
+	static float heater_plate_current = 0.0;
+
+	static float aux = 0.0;
+
+	if(system_flags & (1 << BUTTON_READ_FLAG)){
+
+		__disable_irq();
+		system_flags &= ~(1 << BUTTON_READ_FLAG);
+		__enable_irq();
+
+
+		if(!(system_flags & (1 << DISPLAY_TEMP_SCAN_FLAG))){
+
+			if(G1_Get_Button_Long(1 << POWER_BUTTON)){
+				system_state = WAIT_FOR_POWER_OFF_STATE;
+			}
+
+			if(G1_Get_Button_Short(1 << MODE_BUTTON)){
+				__disable_irq();
+				system_flags ^= (1 << INVASIVE_MODE_FLAG);
+				__enable_irq();
+			}
+
+			if(G1_Get_Button_Long(1 << MUTE_BUTTON)){
+				__disable_irq();
+				system_flags |= (1 << DISPLAY_TEMP_SCAN_FLAG);
+				__enable_irq();
+			}
+
+
+			if(G1_Get_Button_Short(1 << MUTE_BUTTON)){
+				Alarm_Buzzer_Mute();
+			}
+
+		}
+
+	}
+
+	if(system_flags & (1 << CHECK_RTD_INPUT_VOLTAGE_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << CHECK_RTD_INPUT_VOLTAGE_FLAG);
+		__enable_irq();
+		Temp_Sensor_Input_Voltage_Measure();
+	}
+
+	if(system_flags & (1 << CHECK_HEATER_PLATE_TEMP_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << CHECK_HEATER_PLATE_TEMP_FLAG);
+		__enable_irq();
+		Heater_Plate_Temperature_Measure();
+	}
+
+	if(system_flags & (1 << HEATER_PLATE_FEEDBACK_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << HEATER_PLATE_FEEDBACK_FLAG);
+		__enable_irq();
+		Heater_Plate_Feedback_Measure();
+	}
+
+	if(system_flags & (1 << NEW_MEASURE_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << NEW_MEASURE_FLAG);
+		__enable_irq();
+		Chamber_Temperature_Measure();
+		Airway_Temperature_Measure();
+		chamber_temp = Chamber_Temperature_Get();
+		airway_temp = Airway_Temperature_Get();
+	}
+
+
+	if(system_flags & (1 << ALARM_UPDATE_FLAG)){
+
+		__disable_irq();
+		system_flags &= ~(1 << ALARM_UPDATE_FLAG);
+		__enable_irq();
+
+		Alarm_Manager();
+
+	}
+
+	if(system_flags & (1 << DISPLAY_UPDATE_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << DISPLAY_UPDATE_FLAG);
+		__enable_irq();
+
+		if(system_flags & (1 << DISPLAY_TEMP_SCAN_FLAG)){
+			Display_Temperature_Scan();
+		}
+
+		Display_Update();
+	}
+
+
+	if(system_flags & (1 << ONE_MILLISECOND_ELAPSED_FLAG)){
+		__disable_irq();
+		system_flags &= ~(1 << ONE_MILLISECOND_ELAPSED_FLAG);
+		__enable_irq();
+		millisecond_counter++;
+	}
+
+
+	if(system_flags & (1 << CHECK_HEATER_PLATE_CIRCUIT_FLAG)){
+
+		if(Test_Heater_Plate_SCR()){
+			__disable_irq();
+			system_flags &= ~(1 << CHECK_HEATER_PLATE_CIRCUIT_FLAG);
+			__enable_irq();
+		}
+
+	}else if(system_flags & (1 << CHECK_HEATER_WIRE_CIRCUIT_FLAG)){
+
+		if(system_flags & (1 << NON_HEATER_MODE_FLAG)){
+			__disable_irq();
+			system_flags &= ~(1 << CHECK_HEATER_WIRE_CIRCUIT_FLAG);
+			__enable_irq();
+
+		}else{
+
+			if(Test_Heater_Wire_Presence()){
+				__disable_irq();
+				system_flags &= ~(1 << CHECK_HEATER_WIRE_CIRCUIT_FLAG);
+				__enable_irq();
+			}
+		}
+
+
+	}else if(system_flags & (1 << HEATER_PLATE_OUTPUT_UPDATE_FLAG)){
+
+		__disable_irq();
+		system_flags &= ~(1 << HEATER_PLATE_OUTPUT_UPDATE_FLAG);
+		Set_Heater_Plate_Duty_Cycle(HEATER_PLATE_MIN_DUTY_CYCLE);
+		__enable_irq();
+
+	}else if(system_flags & (1 << HEATER_WIRE_OUTPUT_UPDATE_FLAG)){
+
+		__disable_irq();
+		system_flags &= ~(1 << HEATER_WIRE_OUTPUT_UPDATE_FLAG);
+		Set_Heater_Wire_01_Duty_Cycle(HEATER_WIRE_01_MIN_DUTY_CYCLE);
+		Set_Heater_Wire_02_Duty_Cycle(HEATER_WIRE_02_MIN_DUTY_CYCLE);
+		__enable_irq();
+
+	}
+
+
+	if(system_flags & (1 << ONE_SECOND_ELAPSED_FLAG)){
+
+		__disable_irq();
+		system_flags &= ~(1 << ONE_SECOND_ELAPSED_FLAG);
+		__enable_irq();
+
+		//heater_plate_current = Heater_Plate_Max_Current_Get();
+		//sprintf((char *)uart_tx_buffer,"%d.%02d,%d.%02d\r\n", (int)my_setpoint, ((int)(new_sp * 100)) % 100,(int)chamber_temp, ((int)(chamber_temp * 100)) % 100);
+		//sprintf((char *)uart_tx_buffer,"%d.%02d\r\n", (int)chamber_temp, ((int)(chamber_temp * 100)) % 100);
+		//sprintf((char *)uart_tx_buffer,"%d.%02d,%d.0\r\n", (int)chamber_temp, ((int)(chamber_temp * 100)) % 100, Get_Heater_Plate_Duty_Cycle());
+		sprintf((char *)uart_tx_buffer,"%d.%02d,%d.0\r\n", (int)chamber_temp, ((int)(chamber_temp * 100)) % 100, Get_Heater_Wire_01_Duty_Cycle());
+		HAL_UART_Transmit(&huart3, (uint8_t *)uart_tx_buffer, strlen(uart_tx_buffer), HAL_MAX_DELAY);
+
+//		heater_plate_temp = Heater_Plate_Temperature_Get();
+//		sprintf((char *)uart_tx_buffer,"T_Cam: %d.%02d\r\nT_Corr: %d.%02d\r\nT_Plato: %d.%02d\r\nI(mA): %d\r\n\n",
+//				(int)chamber_temp, ((int)(chamber_temp * 100)) % 100,
+//				(int)airway_temp, ((int)(airway_temp * 100)) % 100,
+//				(int)heater_plate_temp, ((int)(heater_plate_temp * 100)) % 100,
+//				(int)heater_plate_current
+//				);
+		//HAL_UART_Transmit(&huart3, (uint8_t *)uart_tx_buffer, strlen((char *)uart_tx_buffer), HAL_MAX_DELAY);
+		//Heater_Plate_Max_Current_Reset();
+
+	}
+
+
+	if(system_flags & (1 << SEE_MANUAL_ALARM_FLAG)){
+		__disable_irq();
+		system_state = ERROR_STATE;
+		__enable_irq();
+	}else if(alarm_flags & STANDBY_ALARM_MASK){
+		__disable_irq();
+		system_state = STANDBY_STATE;
+		__enable_irq();
+	}else{
+		__disable_irq();
+		system_state = NORMAL_WORKING_STATE;
+		__enable_irq();
+	}
+
+
+}
+
+
+
+
